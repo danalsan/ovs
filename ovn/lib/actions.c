@@ -1195,10 +1195,10 @@ format_CLONE(const struct ovnact_nest *nest, struct ds *s)
 }
 
 static void
-encode_nested_neighbor_actions(const struct ovnact_nest *on,
-                               const struct ovnact_encode_params *ep,
-                               enum action_opcode opcode,
-                               struct ofpbuf *ofpacts)
+encode_nested_actions(const struct ovnact_nest *on,
+                      const struct ovnact_encode_params *ep,
+                      enum action_opcode opcode,
+                      struct ofpbuf *ofpacts)
 {
     /* Convert nested actions into ofpacts. */
     uint64_t inner_ofpacts_stub[1024 / 8];
@@ -1223,7 +1223,7 @@ encode_ARP(const struct ovnact_nest *on,
            const struct ovnact_encode_params *ep,
            struct ofpbuf *ofpacts)
 {
-    encode_nested_neighbor_actions(on, ep, ACTION_OPCODE_ARP, ofpacts);
+    encode_nested_actions(on, ep, ACTION_OPCODE_ARP, ofpacts);
 }
 
 static void
@@ -1231,7 +1231,7 @@ encode_ND_NA(const struct ovnact_nest *on,
              const struct ovnact_encode_params *ep,
              struct ofpbuf *ofpacts)
 {
-    encode_nested_neighbor_actions(on, ep, ACTION_OPCODE_ND_NA, ofpacts);
+    encode_nested_actions(on, ep, ACTION_OPCODE_ND_NA, ofpacts);
 }
 
 static void
@@ -1239,8 +1239,7 @@ encode_ND_NA_ROUTER(const struct ovnact_nest *on,
              const struct ovnact_encode_params *ep,
              struct ofpbuf *ofpacts)
 {
-    encode_nested_neighbor_actions(on, ep, ACTION_OPCODE_ND_NA_ROUTER,
-                                   ofpacts);
+    encode_nested_actions(on, ep, ACTION_OPCODE_ND_NA_ROUTER, ofpacts);
 }
 
 static void
@@ -1248,7 +1247,7 @@ encode_ND_NS(const struct ovnact_nest *on,
              const struct ovnact_encode_params *ep,
              struct ofpbuf *ofpacts)
 {
-    encode_nested_neighbor_actions(on, ep, ACTION_OPCODE_ND_NS, ofpacts);
+    encode_nested_actions(on, ep, ACTION_OPCODE_ND_NS, ofpacts);
 }
 
 static void
