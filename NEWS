@@ -1,5 +1,7 @@
 v2.9.3 - xx xxx xxxx
 --------------------
+  - ovn:
+     * ACL match conditions can now match on Port_Groups.
 
 v2.9.2 - 25 May 2018
 --------------------
