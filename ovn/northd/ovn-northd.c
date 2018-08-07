@@ -2837,8 +2837,6 @@ struct ovn_port_group {
     struct uuid key;            /* nb_pg->header_.uuid. */
     const struct nbrec_port_group *nb_pg;
     struct hmap nb_lswitches;   /* NB lswitches related to the port group */
-    size_t n_acls;              /* Number of ACLs applied to the port group */
-    struct nbrec_acl **acls;    /* ACLs applied to the port group */
 };
 
 static void
@@ -2878,8 +2876,8 @@ has_stateful_acl(struct ovn_datapath *od, struct hmap *port_groups)
     struct ovn_port_group *pg;
     HMAP_FOR_EACH (pg, key_node, port_groups) {
         if (ovn_port_group_ls_find(pg, &od->nbs->header_.uuid)) {
-            for (size_t i = 0; i < pg->n_acls; i++) {
-                struct nbrec_acl *acl = pg->acls[i];
+            for (size_t i = 0; i < pg->nb_pg->n_acls; i++) {
+                struct nbrec_acl *acl = pg->nb_pg->acls[i];
                 if (!strcmp(acl->action, "allow-related")) {
                     return true;
                 }
@@ -3331,8 +3329,6 @@ ovn_port_group_create(struct hmap *pgs,
     struct ovn_port_group *pg = xzalloc(sizeof *pg);
     pg->key = nb_pg->header_.uuid;
     pg->nb_pg = nb_pg;
-    pg->n_acls = nb_pg->n_acls;
-    pg->acls = nb_pg->acls;
     hmap_init(&pg->nb_lswitches);
     hmap_insert(pgs, &pg->key_node, uuid_hash(&pg->key));
     return pg;
@@ -3496,8 +3492,8 @@ build_acls(struct ovn_datapath *od, struct hmap *lflows,
     struct ovn_port_group *pg;
     HMAP_FOR_EACH (pg, key_node, port_groups) {
         if (ovn_port_group_ls_find(pg, &od->nbs->header_.uuid)) {
-            for (size_t i = 0; i < pg->n_acls; i++) {
-                consider_acl(lflows, od, pg->acls[i], has_stateful);
+            for (size_t i = 0; i < pg->nb_pg->n_acls; i++) {
+                consider_acl(lflows, od, pg->nb_pg->acls[i], has_stateful);
             }
         }
     }
