@@ -429,6 +429,9 @@ struct ovn_datapath {
      * the "redirect-chassis". */
     struct ovn_port *l3redirect_port;
     struct ovn_port *localnet_port;
+
+    /* Port groups related to the datapath, used only when nbs is NOT NULL. */
+    struct hmap nb_pgs;
 };
 
 struct macam_node {
@@ -457,10 +460,13 @@ ovn_datapath_create(struct hmap *datapaths, const struct uuid *key,
     od->nbs = nbs;
     od->nbr = nbr;
     hmap_init(&od->port_tnlids);
+    hmap_init(&od->nb_pgs);
     od->port_key_hint = 0;
     hmap_insert(datapaths, &od->key_node, uuid_hash(&od->key));
     return od;
 }
+
+static void ovn_ls_port_group_destroy(struct hmap *nb_pgs);
 
 static void
 ovn_datapath_destroy(struct hmap *datapaths, struct ovn_datapath *od)
@@ -476,6 +482,7 @@ ovn_datapath_destroy(struct hmap *datapaths, struct ovn_datapath *od)
             free(od->ipam_info);
         }
         free(od->router_ports);
+        ovn_ls_port_group_destroy(&od->nb_pgs);
         free(od);
     }
 }
@@ -2863,8 +2870,34 @@ ovn_port_group_ls_find(struct ovn_port_group *pg, const struct uuid *ls_uuid)
     return NULL;
 }
 
+struct ovn_ls_port_group {
+    struct hmap_node key_node;  /* Index on 'key'. */
+    struct uuid key;            /* nb_pg->header_.uuid. */
+    const struct nbrec_port_group *nb_pg;
+};
+
+static void
+ovn_ls_port_group_add(struct hmap *nb_pgs,
+                      const struct nbrec_port_group *nb_pg)
+{
+    struct ovn_ls_port_group *ls_pg = xzalloc(sizeof *ls_pg);
+    ls_pg->key = nb_pg->header_.uuid;
+    ls_pg->nb_pg = nb_pg;
+    hmap_insert(nb_pgs, &ls_pg->key_node, uuid_hash(&ls_pg->key));
+}
+
+static void
+ovn_ls_port_group_destroy(struct hmap *nb_pgs)
+{
+    struct ovn_ls_port_group *ls_pg;
+    HMAP_FOR_EACH_POP (ls_pg, key_node, nb_pgs) {
+        free(ls_pg);
+    }
+    hmap_destroy(nb_pgs);
+}
+
 static bool
-has_stateful_acl(struct ovn_datapath *od, struct hmap *port_groups)
+has_stateful_acl(struct ovn_datapath *od)
 {
     for (size_t i = 0; i < od->nbs->n_acls; i++) {
         struct nbrec_acl *acl = od->nbs->acls[i];
@@ -2873,25 +2906,23 @@ has_stateful_acl(struct ovn_datapath *od, struct hmap *port_groups)
         }
     }
 
-    struct ovn_port_group *pg;
-    HMAP_FOR_EACH (pg, key_node, port_groups) {
-        if (ovn_port_group_ls_find(pg, &od->nbs->header_.uuid)) {
-            for (size_t i = 0; i < pg->nb_pg->n_acls; i++) {
-                struct nbrec_acl *acl = pg->nb_pg->acls[i];
-                if (!strcmp(acl->action, "allow-related")) {
-                    return true;
-                }
+    struct ovn_ls_port_group *ls_pg;
+    HMAP_FOR_EACH (ls_pg, key_node, &od->nb_pgs) {
+        for (size_t i = 0; i < ls_pg->nb_pg->n_acls; i++) {
+            struct nbrec_acl *acl = ls_pg->nb_pg->acls[i];
+            if (!strcmp(acl->action, "allow-related")) {
+                return true;
             }
         }
     }
+
     return false;
 }
 
 static void
-build_pre_acls(struct ovn_datapath *od, struct hmap *lflows,
-               struct hmap *port_groups)
+build_pre_acls(struct ovn_datapath *od, struct hmap *lflows)
 {
-    bool has_stateful = has_stateful_acl(od, port_groups);
+    bool has_stateful = has_stateful_acl(od);
 
     /* Ingress and Egress Pre-ACL Table (Priority 0): Packets are
      * allowed by default. */
@@ -3379,6 +3410,7 @@ build_port_group_lswitches(struct northd_context *ctx, struct hmap *pgs,
                 ovn_port_group_ls_find(pg, &op->od->nbs->header_.uuid);
             if (!pg_ls) {
                 ovn_port_group_ls_add(pg, op->od->nbs);
+                ovn_ls_port_group_add(&op->od->nb_pgs, nb_pg);
             }
         }
     }
@@ -3388,7 +3420,7 @@ static void
 build_acls(struct ovn_datapath *od, struct hmap *lflows,
            struct hmap *port_groups)
 {
-    bool has_stateful = has_stateful_acl(od, port_groups);
+    bool has_stateful = has_stateful_acl(od);
 
     /* Ingress and Egress ACL Table (Priority 0): Packets are allowed by
      * default.  A related rule at priority 1 is added below if there
@@ -3741,7 +3773,7 @@ build_lswitch_flows(struct hmap *datapaths, struct hmap *ports,
             continue;
         }
 
-        build_pre_acls(od, lflows, port_groups);
+        build_pre_acls(od, lflows);
         build_pre_lb(od, lflows);
         build_pre_stateful(od, lflows);
         build_acls(od, lflows, port_groups);
